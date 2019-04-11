@@ -5,11 +5,16 @@ import sys
 import threading
 import traceback
 import webbrowser
+from subprocess import Popen
 
 from base64 import b64encode
 from fitbit.api import Fitbit
 from oauthlib.oauth2.rfc6749.errors import MismatchingStateError, MissingTokenError
 
+cherrypy.log.screen = None
+
+def open_url(url):
+        p1 = Popen(['google-chrome-stable',str(url)])
 
 class OAuth2Server:
     def __init__(self, client_id, client_secret,
@@ -35,8 +40,11 @@ class OAuth2Server:
         """
         url, _ = self.fitbit.client.authorize_token_url()
         # Open the web browser in a new thread for command-line browser support
-        threading.Timer(1, webbrowser.open, args=(url,)).start()
+        # threading.Timer(1, webbrowser.open, args=(url,)).start()
+        # threading.Timer(1, open_url, args=(url,)).start()
+        webbrowser.open(url)
         cherrypy.quickstart(self)
+        # return p1.pid
 
     @cherrypy.expose
     def index(self, state, code=None, error=None):
@@ -68,7 +76,8 @@ class OAuth2Server:
     def _shutdown_cherrypy(self):
         """ Shutdown cherrypy in one second, if it's running """
         if cherrypy.engine.state == cherrypy.engine.states.STARTED:
-            threading.Timer(1, cherrypy.engine.exit).start()
+            cherrypy.engine.exit()
+            # threading.Timer(1, cherrypy.engine.exit).start()
 
 
 if __name__ == '__main__':
