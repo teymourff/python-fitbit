@@ -2,6 +2,8 @@
 import datetime
 import json
 import requests
+import time
+from sys import stdout
 
 try:
     from urllib.parse import urlencode
@@ -95,7 +97,16 @@ class FitbitOauth2Client(object):
             client_secret=self.client_secret,
             **kwargs
         )
-
+        resp_headers = response.headers
+        if response.status_code == 429:
+            reset_at = resp_headers['Fitbit-Rate-Limit-Reset']
+            print('You have reached the API rate limit, your quota will refresh in {} seconds. Sleeping until then.'.format(str(reset_at)))
+            for i in range((int(reset_at)+15),0,-1):
+                time.sleep(1)
+                stdout.write(str(i)+' ')
+                stdout.flush()
+            new_response = self._request(method,url,data=data,client_id=self.client_id,client_secret=self.client_secret,**kwargs)
+            return new_response
         exceptions.detect_and_raise_error(response)
 
         return response
@@ -127,7 +138,6 @@ class FitbitOauth2Client(object):
 
         if redirect_uri:
             self.session.redirect_uri = redirect_uri
-
         return self.session.authorization_url(self.authorization_url, **kwargs)
 
     def fetch_access_token(self, code, redirect_uri=None):
@@ -253,7 +263,15 @@ class Fitbit(object):
 
         method = kwargs.get('method', 'POST' if 'data' in kwargs else 'GET')
         response = self.client.make_request(*args, **kwargs)
-
+        resp_headers = response.headers
+        rl_remaining = resp_headers['Fitbit-Rate-Limit-Remaining']
+        reset_at = resp_headers['Fitbit-Rate-Limit-Reset']
+        if str(rl_remaining) == '0':
+            print('You have reached the API rate limit, your quota will refresh in {} seconds. Sleeping until then.'.format(str(reset_at)))
+            for i in range(int(reset_at),0,-1):
+                time.sleep(1)
+                stdout.write(str(i)+' ')
+                stdout.flush()
         if response.status_code == 202:
             return True
         if method == 'DELETE':
@@ -529,22 +547,19 @@ class Fitbit(object):
         """
         if period and end_date:
             raise TypeError("Either end_date or period can be specified, not both")
-
-        if end_date:
-            end = self._get_date_string(end_date)
+        if resource != 'sleep':
+            if end_date:
+                end = self._get_date_string(end_date)
+            else:
+                if not period in Fitbit.PERIODS:
+                    raise ValueError("Period must be one of %s"
+                                     % ','.join(Fitbit.PERIODS))
+                end = period
+            url = "{0}/{1}/user/{2}/{resource}/date/{base_date}/{end}.json".format(*self._get_common_args(user_id),resource=resource,base_date=self._get_date_string(base_date),end=end)
+            return self.make_request(url)
         else:
-            if not period in Fitbit.PERIODS:
-                raise ValueError("Period must be one of %s"
-                                 % ','.join(Fitbit.PERIODS))
-            end = period
-
-        url = "{0}/{1}/user/{2}/{resource}/date/{base_date}/{end}.json".format(
-            *self._get_common_args(user_id),
-            resource=resource,
-            base_date=self._get_date_string(base_date),
-            end=end
-        )
-        return self.make_request(url)
+            url = "{0}/1.2/user/{2}/{resource}/date/{base_date}.json".format(*self._get_common_args(user_id),resource=resource,base_date=self._get_date_string(base_date))
+            return self.make_request(url)
 
     def intraday_time_series(self, resource, base_date='today', detail_level='1min', start_time=None, end_time=None):
         """
@@ -616,6 +631,7 @@ class Fitbit(object):
             *self._get_common_args(user_id),
             qualifier=qualifier
         )
+        print (str(url))
         return self.make_request(url)
 
     def _food_stats(self, user_id=None, qualifier=''):
